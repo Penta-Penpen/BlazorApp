@@ -1,0 +1,91 @@
+@page "/account/login"
+@inject HttpClient Http
+@inject NavigationManager NavigationManager
+
+<h3>Login</h3>
+
+<div>
+    <label>Email</label>
+    <input @bind="Email" />
+</div>
+<div>
+    <label>Password</label>
+    <input type="password" @bind="Password" />
+</div>
+<div>
+    <label><input type="checkbox" @bind="Remember" /> Remember Me</label>
+</div>
+<button @onclick="SubmitLogin">Login</button>
+
+<div>
+    <p>Or login with:</p>
+    <button @onclick="() => ExternalLogin(\"Google\")">Google</button>
+    <button @onclick="() => ExternalLogin(\"Microsoft\")">Microsoft</button>
+</div>
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <div style="color:red">@Error</div>
+}
+
+@code {
+    private string Email;
+    private string Password;
+    private bool Remember;
+    private string ReturnUrl;
+    private string Error;
+
+    protected override void OnInitialized()
+    {
+        var uri = new Uri(NavigationManager.Uri);
+        var q = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+        if (q.TryGetValue("returnUrl", out var rv))
+        {
+            ReturnUrl = rv;
+        }
+    }
+
+    private async Task SubmitLogin()
+    {
+        Error = null;
+        var dto = new
+        {
+            Email,
+            Password,
+            RememberMe = Remember,
+            ReturnUrl = ReturnUrl ?? "/"
+        };
+
+        // Note: route is api/Account (controller name). Adjust if you change controller route/name.
+        var resp = await Http.PostAsJsonAsync("api/account/login", dto);
+        if (resp.IsSuccessStatusCode)
+        {
+            var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var redirect = json.GetProperty("redirect").GetString() ?? "/";
+            // Ensure cookie is applied: full page reload
+            NavigationManager.NavigateTo(redirect, forceLoad: true);
+        }
+        else
+        {
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                Error = "認証に失敗しました。";
+            }
+            else if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                Error = "アカウントがロックされています。";
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                Error = $"エラー: {body}";
+            }
+        }
+    }
+
+    private void ExternalLogin(string provider)
+    {
+        var url = $"api/account/externallogin?provider={Uri.EscapeDataString(provider)}&returnUrl={Uri.EscapeDataString(ReturnUrl ?? "/")}";
+        NavigationManager.NavigateTo(url, forceLoad: true);
+    }
+}
