@@ -11,6 +11,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+// --- service registration (追加箇所) ---
+builder.Services.AddControllers();
+// 既存: builder.Services.AddRazorPages(); builder.Services.AddServerSideBlazor(); etc.
+// ---------------------------------------
+
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<IdentityUserAccessor>();
 builder.Services.AddScoped<IdentityRedirectManager>();
@@ -60,4 +65,13 @@ app.MapRazorComponents<App>()
 // Add additional endpoints required by the Identity /Account Razor components.
 app.MapAdditionalIdentityEndpoints();
 
+// --- middleware / endpoint (追加箇所) ---
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllers(); // ← 追加：API Controller を受ける
+app.MapBlazorHub();
+app.MapFallbackToPage("/_Host");
+
 app.Run();
+
