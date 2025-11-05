@@ -1,4 +1,4 @@
-﻿@page "/Account/Manage"
+@page "/Account/Manage"
 @rendermode InteractiveServer
 
 @using System.ComponentModel.DataAnnotations
@@ -19,20 +19,18 @@
 {
     <div class="row">
         <div class="col-md-6">
-            <EditForm Model="Input" FormName="profile" OnValidSubmit="OnValidSubmitAsync" method="post">
-                <DataAnnotationsValidator />
-                <ValidationSummary class="text-danger" role="alert" />
+            <form action="/Account/Manage/PerformUpdateProfile" method="post">
+                <AntiforgeryToken />
                 <div class="form-floating mb-3">
                     <input type="text" value="@_username" class="form-control" placeholder="Please choose your username." disabled />
                     <label for="username" class="form-label">Username</label>
                 </div>
                 <div class="form-floating mb-3">
-                    <InputText @bind-Value="Input.PhoneNumber" class="form-control" placeholder="Please enter your phone number." />
+                    <input name="PhoneNumber" value="@_phoneNumber" class="form-control" placeholder="Please enter your phone number." />
                     <label for="phone-number" class="form-label">Phone number</label>
-                    <ValidationMessage For="() => Input.PhoneNumber" class="text-danger" />
                 </div>
                 <button type="submit" class="w-100 btn btn-lg btn-primary">Save</button>
-            </EditForm>
+            </form>
         </div>
     </div>
 }
@@ -44,11 +42,16 @@
     private string? _statusMessage;
     private bool _isLoaded;
 
-    [SupplyParameterFromForm]
-    private InputModel Input { get; set; } = new();
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? Status { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
+        if (!string.IsNullOrEmpty(Status))
+        {
+            _statusMessage = Status;
+        }
+
         var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         var userId = UserManager.GetUserId(authState.User);
 
@@ -68,34 +71,6 @@
         _user = user;
         _username = await UserManager.GetUserNameAsync(_user);
         _phoneNumber = await UserManager.GetPhoneNumberAsync(_user);
-
-        Input.PhoneNumber ??= _phoneNumber;
         _isLoaded = true;
-    }
-
-    private async Task OnValidSubmitAsync()
-    {
-        if (Input.PhoneNumber != _phoneNumber)
-        {
-            var setPhoneResult = await UserManager.SetPhoneNumberAsync(_user, Input.PhoneNumber);
-            if (!setPhoneResult.Succeeded)
-            {
-                _statusMessage = "Error: Failed to set phone number.";
-                return;
-            }
-        }
-
-        await SignInManager.RefreshSignInAsync(_user);
-        _statusMessage = "Your profile has been updated";
-
-        // Reload phone number
-        _phoneNumber = await UserManager.GetPhoneNumberAsync(_user);
-    }
-
-    private sealed class InputModel
-    {
-        [Phone]
-        [Display(Name = "Phone number")]
-        public string? PhoneNumber { get; set; }
     }
 }
