@@ -1,4 +1,4 @@
-﻿using BlazorApp2.Components.Account.Pages;
+using BlazorApp2.Components.Account.Pages;
 using BlazorApp2.Components.Account.Pages.Manage;
 using BlazorApp2.Data;
 using Microsoft.AspNetCore.Authentication;
@@ -229,8 +229,7 @@ namespace Microsoft.AspNetCore.Routing
                 [FromServices] ILogger<Program> logger,
                 [FromForm] string OldPassword,
                 [FromForm] string NewPassword,
-                [FromForm] string ConfirmPassword,
-                [FromForm] string? ReturnUrl) =>
+                [FromForm] string ConfirmPassword) =>
             {
                 var user = await userManager.GetUserAsync(context.User);
                 if (user is null)
@@ -238,23 +237,34 @@ namespace Microsoft.AspNetCore.Routing
                     return Results.NotFound($"Unable to load user with ID '{userManager.GetUserId(context.User)}'.");
                 }
 
+                // パスワードの確認
+                if (NewPassword != ConfirmPassword)
+                {
+                    var errorUrl = $"~/Account/Manage/ChangePassword?error={Uri.EscapeDataString("The new password and confirmation password do not match.")}";
+                    return TypedResults.LocalRedirect(errorUrl);
+                }
+
+                // ユーザーがパスワードを持っているか確認
                 var hasPassword = await userManager.HasPasswordAsync(user);
                 if (!hasPassword)
                 {
                     return TypedResults.LocalRedirect("~/Account/Manage/SetPassword");
                 }
 
+                // パスワード変更を実行
                 var changePasswordResult = await userManager.ChangePasswordAsync(user, OldPassword, NewPassword);
                 if (!changePasswordResult.Succeeded)
                 {
-                    var errorUrl = $"~/Account/Manage/ChangePassword?error=Passwords do not match&returnUrl={Uri.EscapeDataString(ReturnUrl ?? "")}";
+                    var errors = string.Join(", ", changePasswordResult.Errors.Select(e => e.Description));
+                    var errorUrl = $"~/Account/Manage/ChangePassword?error={Uri.EscapeDataString(errors)}";
                     return TypedResults.LocalRedirect(errorUrl);
                 }
+
 
                 await signInManager.RefreshSignInAsync(user);
                 logger.LogInformation("User changed their password successfully.");
 
-                var resultUrl = $"~/Account/Manage/ChangePassword?error=User changed their password successfully.&returnUrl={Uri.EscapeDataString(ReturnUrl ?? "")}";
+                var resultUrl = $"~/Account/Manage/ChangePassword?status={Uri.EscapeDataString("Your password has been changed.")}";
                 return TypedResults.LocalRedirect(resultUrl);
             }).DisableAntiforgery();
 
@@ -383,6 +393,69 @@ namespace Microsoft.AspNetCore.Routing
 
                 var errors = string.Join(", ", result.Errors.Select(e => e.Description));
                 return TypedResults.LocalRedirect($"~/Account/ExternalLogin?error={Uri.EscapeDataString(errors)}&returnUrl={Uri.EscapeDataString(ReturnUrl ?? "")}");
+            }).DisableAntiforgery();
+
+            // Resend Email Confirmation エンドポイント
+            accountGroup.MapPost("/PerformResendEmailConfirmation", async (
+                HttpContext context,
+                [FromServices] UserManager<ApplicationUser> userManager,
+                [FromServices] IEmailSender<ApplicationUser> emailSender,
+                [FromForm] string? Email) =>
+            {
+                var user = await userManager.FindByEmailAsync(Email ?? "");
+                if ((user is null) || (Email is null))
+                {
+                    return TypedResults.LocalRedirect("~/Account/ResendEmailConfirmation?status=" +
+                        Uri.EscapeDataString("Verification email sent. Please check your email."));
+                }
+
+                var userId = await userManager.GetUserIdAsync(user);
+                var code = await userManager.GenerateEmailConfirmationTokenAsync(user);
+                code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+
+                var callbackUrl = $"{context.Request.Scheme}://{context.Request.Host}/Account/ConfirmEmail?userId={userId}&code={code}";
+
+                await emailSender.SendConfirmationLinkAsync(user, Email, System.Text.Encodings.Web.HtmlEncoder.Default.Encode(callbackUrl));
+
+                return TypedResults.LocalRedirect("~/Account/ResendEmailConfirmation?status=" +
+                    Uri.EscapeDataString("Verification email sent. Please check your email."));
+            }).DisableAntiforgery();
+
+            // Reset Password エンドポイント
+            accountGroup.MapPost("/PerformResetPassword", async (
+                HttpContext context,
+                [FromServices] UserManager<ApplicationUser> userManager,
+                [FromForm] string? Email,
+                [FromForm] string? Password,
+                [FromForm] string? ConfirmPassword,
+                [FromForm] string? Code) =>
+            {
+                if (Password != ConfirmPassword)
+                {
+                    return TypedResults.LocalRedirect("~/Account/ResetPassword?code=" +
+                        Uri.EscapeDataString(Code ?? "") + "&error=" +
+                        Uri.EscapeDataString("Passwords do not match"));
+                }
+
+                var user = await userManager.FindByEmailAsync(Email ?? "");
+                if (user is null)
+                {
+                    // Don't reveal that the user does not exist
+                    return TypedResults.LocalRedirect("~/Account/ResetPasswordConfirmation");
+                }
+
+                var decodedCode = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(Code ?? ""));
+                var result = await userManager.ResetPasswordAsync(user, decodedCode, Password ?? "");
+
+                if (result.Succeeded)
+                {
+                    return TypedResults.LocalRedirect("~/Account/ResetPasswordConfirmation");
+                }
+
+                var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                return TypedResults.LocalRedirect("~/Account/ResetPassword?code=" +
+                    Uri.EscapeDataString(Code ?? "") + "&error=" +
+                    Uri.EscapeDataString(errors));
             }).DisableAntiforgery();
 
             // ログアウト処理用エンドポイント.
@@ -519,6 +592,170 @@ namespace Microsoft.AspNetCore.Routing
                 var recoveryCodesStr = string.Join(",", recoveryCodes!);
                 return TypedResults.LocalRedirect("~/Account/Manage/GenerateRecoveryCodes?recoveryCodes=" +
                     Uri.EscapeDataString(recoveryCodesStr));
+            }).DisableAntiforgery();
+
+            // Delete Personal Data エンドポイント
+            manageGroup.MapPost("/PerformDeletePersonalData", async (
+                HttpContext context,
+                [FromServices] UserManager<ApplicationUser> userManager,
+                [FromServices] SignInManager<ApplicationUser> signInManager,
+                [FromServices] ILogger<Program> logger,
+                [FromForm] string? Password) =>
+            {
+                var user = await userManager.GetUserAsync(context.User);
+                if (user is null)
+                {
+                    return Results.NotFound($"Unable to load user with ID '{userManager.GetUserId(context.User)}'.");
+                }
+
+                var requirePassword = await userManager.HasPasswordAsync(user);
+                if (requirePassword && !await userManager.CheckPasswordAsync(user, Password ?? ""))
+                {
+                    var errorUrl = "~/Account/Manage/DeletePersonalData?error=Incorrect password";
+                    return TypedResults.LocalRedirect(errorUrl);
+                }
+
+                var result = await userManager.DeleteAsync(user);
+                if (!result.Succeeded)
+                {
+                    throw new InvalidOperationException("Unexpected error occurred deleting user.");
+                }
+
+                await signInManager.SignOutAsync();
+
+                var userId = await userManager.GetUserIdAsync(user);
+                logger.LogInformation("User with ID '{UserId}' deleted themselves.", userId);
+
+                return TypedResults.LocalRedirect("~/");
+            }).DisableAntiforgery();
+
+            // Change Email エンドポイント
+            manageGroup.MapPost("/PerformChangeEmail", async (
+                HttpContext context,
+                [FromServices] UserManager<ApplicationUser> userManager,
+                [FromServices] IEmailSender<ApplicationUser> emailSender,
+                [FromServices] NavigationManager navigationManager,
+                [FromForm] string NewEmail) =>
+            {
+                var user = await userManager.GetUserAsync(context.User);
+                if (user is null)
+                {
+                    return TypedResults.LocalRedirect("~/Account/Login");
+                }
+
+                var email = await userManager.GetEmailAsync(user);
+                if (NewEmail == email)
+                {
+                    return TypedResults.LocalRedirect("~/Account/Manage/Email?status=" +
+                        Uri.EscapeDataString("Your email is unchanged."));
+                }
+
+                var userId = await userManager.GetUserIdAsync(user);
+                var code = await userManager.GenerateChangeEmailTokenAsync(user, NewEmail);
+                code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+
+                var callbackUrl = $"{context.Request.Scheme}://{context.Request.Host}/Account/ConfirmEmailChange?userId={userId}&email={Uri.EscapeDataString(NewEmail)}&code={code}";
+
+                await emailSender.SendConfirmationLinkAsync(user, NewEmail, System.Text.Encodings.Web.HtmlEncoder.Default.Encode(callbackUrl));
+
+                return TypedResults.LocalRedirect("~/Account/Manage/Email?status=" +
+                    Uri.EscapeDataString("Confirmation link to change email sent. Please check your email."));
+            }).DisableAntiforgery();
+
+            // Update Profile エンドポイント
+            manageGroup.MapPost("/PerformUpdateProfile", async (
+                HttpContext context,
+                [FromServices] UserManager<ApplicationUser> userManager,
+                [FromServices] SignInManager<ApplicationUser> signInManager,
+                [FromForm] string? PhoneNumber) =>
+            {
+                var user = await userManager.GetUserAsync(context.User);
+                if (user is null)
+                {
+                    return TypedResults.LocalRedirect("~/Account/Login");
+                }
+
+                var phoneNumber = await userManager.GetPhoneNumberAsync(user);
+                if (PhoneNumber != phoneNumber)
+                {
+                    var setPhoneResult = await userManager.SetPhoneNumberAsync(user, PhoneNumber);
+                    if (!setPhoneResult.Succeeded)
+                    {
+                        return TypedResults.LocalRedirect("~/Account/Manage?status=" +
+                            Uri.EscapeDataString("Error: Failed to set phone number."));
+                    }
+                }
+
+                await signInManager.RefreshSignInAsync(user);
+
+                return TypedResults.LocalRedirect("~/Account/Manage?status=" +
+                    Uri.EscapeDataString("Your profile has been updated"));
+            }).DisableAntiforgery();
+
+            // Send Email Verification エンドポイント
+            manageGroup.MapPost("/PerformSendEmailVerification", async (
+                HttpContext context,
+                [FromServices] UserManager<ApplicationUser> userManager,
+                [FromServices] IEmailSender<ApplicationUser> emailSender) =>
+            {
+                var user = await userManager.GetUserAsync(context.User);
+                if (user is null)
+                {
+                    return TypedResults.LocalRedirect("~/Account/Login");
+                }
+
+                var email = await userManager.GetEmailAsync(user);
+                if (email is null)
+                {
+                    return TypedResults.LocalRedirect("~/Account/Manage/Email");
+                }
+
+                var userId = await userManager.GetUserIdAsync(user);
+                var code = await userManager.GenerateEmailConfirmationTokenAsync(user);
+                code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+
+                var callbackUrl = $"{context.Request.Scheme}://{context.Request.Host}/Account/ConfirmEmail?userId={userId}&code={code}";
+
+                await emailSender.SendConfirmationLinkAsync(user, email, System.Text.Encodings.Web.HtmlEncoder.Default.Encode(callbackUrl));
+
+                return TypedResults.LocalRedirect("~/Account/Manage/Email?status=" +
+                    Uri.EscapeDataString("Verification email sent. Please check your email."));
+            }).DisableAntiforgery();
+
+            // Set Password エンドポイント
+            manageGroup.MapPost("/PerformSetPassword", async (
+                HttpContext context,
+                [FromServices] UserManager<ApplicationUser> userManager,
+                [FromServices] SignInManager<ApplicationUser> signInManager,
+                [FromServices] ILogger<Program> logger,
+                [FromForm] string NewPassword,
+                [FromForm] string ConfirmPassword) =>
+            {
+                var user = await userManager.GetUserAsync(context.User);
+                if (user is null)
+                {
+                    return TypedResults.LocalRedirect("~/Account/Login");
+                }
+
+                if (NewPassword != ConfirmPassword)
+                {
+                    return TypedResults.LocalRedirect("~/Account/Manage/SetPassword?error=" +
+                        Uri.EscapeDataString("Passwords do not match"));
+                }
+
+                var addPasswordResult = await userManager.AddPasswordAsync(user, NewPassword);
+                if (!addPasswordResult.Succeeded)
+                {
+                    var errors = string.Join(", ", addPasswordResult.Errors.Select(e => e.Description));
+                    return TypedResults.LocalRedirect("~/Account/Manage/SetPassword?error=" +
+                        Uri.EscapeDataString(errors));
+                }
+
+                await signInManager.RefreshSignInAsync(user);
+                logger.LogInformation("User set their password successfully.");
+
+                return TypedResults.LocalRedirect("~/Account/Manage/SetPassword?status=" +
+                    Uri.EscapeDataString("Your password has been set."));
             }).DisableAntiforgery();
 
             manageGroup.MapPost("/LinkExternalLogin", async (
