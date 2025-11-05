@@ -1,0 +1,80 @@
+﻿@page "/Account/Login"
+@rendermode InteractiveServer
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject SignInManager<ApplicationUser> SignInManager
+@inject ILogger<Login> Logger
+@inject NavigationManager NavigationManager
+
+<PageTitle>Log in</PageTitle>
+
+<h1>Log in</h1>
+<div class="row">
+    <div class="col-md-4">
+        <section>
+            <StatusMessage Message="@errorMessage" />
+            <form action="/Account/PerformLogin" method="post">
+                <h2>Use a local account to log in.</h2>
+                <hr />
+                <div class="form-floating mb-3">
+                    <input name="Email" type="email" class="form-control" autocomplete="username" aria-required="true" placeholder="name@example.com" required />
+                    <label for="email" class="form-label">Email</label>
+                </div>
+                <div class="form-floating mb-3">
+                    <input name="Password" type="password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="password" required />
+                    <label for="password" class="form-label">Password</label>
+                </div>
+                <div class="checkbox mb-3">
+                    <label class="form-label">
+                        <input name="RememberMe" type="checkbox" class="darker-border-checkbox form-check-input" value="true" />
+                        Remember me
+                    </label>
+                </div>
+                <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+                <div>
+                    <button type="submit" class="w-100 btn btn-lg btn-primary">Log in</button>
+                </div>
+                <div>
+                    <p>
+                        <a href="Account/ForgotPassword">Forgot your password?</a>
+                    </p>
+                    <p>
+                        <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">Register as a new user</a>
+                    </p>
+                    <p>
+                        <a href="Account/ResendEmailConfirmation">Resend email confirmation</a>
+                    </p>
+                </div>
+            </form>
+        </section>
+    </div>
+    <div class="col-md-6 col-md-offset-2">
+        <section>
+            <h3>Use another service to log in.</h3>
+            <hr />
+            <ExternalLoginPicker />
+        </section>
+    </div>
+</div>
+
+@code {
+    private string? errorMessage;
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? Error { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (!string.IsNullOrEmpty(Error))
+        {
+            errorMessage = $"Error: {Error}";
+        }
+    }
+}

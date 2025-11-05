@@ -1,0 +1,57 @@
+﻿@page "/Account/Manage/PersonalData"
+@rendermode InteractiveServer
+
+@using BlazorApp2.Data
+@using Microsoft.AspNetCore.Identity
+
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager NavigationManager
+
+<PageTitle>Personal Data</PageTitle>
+
+<StatusMessage />
+<h3>Personal Data</h3>
+
+@if (_isLoaded)
+{
+    <div class="row">
+        <div class="col-md-6">
+            <p>Your account contains personal data that you have given us. This page allows you to download or delete that data.</p>
+            <p>
+                <strong>Deleting this data will permanently remove your account, and this cannot be recovered.</strong>
+            </p>
+            <form action="Account/Manage/DownloadPersonalData" method="post">
+                <button class="btn btn-primary" type="submit">Download</button>
+            </form>
+            <p>
+                <a href="Account/Manage/DeletePersonalData" class="btn btn-danger">Delete</a>
+            </p>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _isLoaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userId = UserManager.GetUserId(authState.User);
+
+        if (userId == null)
+        {
+            NavigationManager.NavigateTo("Account/Login");
+            return;
+        }
+
+        var user = await UserManager.FindByIdAsync(userId);
+        if (user == null)
+        {
+            NavigationManager.NavigateTo("Account/Login");
+            return;
+        }
+
+        _isLoaded = true;
+    }
+}

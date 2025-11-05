@@ -1,0 +1,77 @@
+﻿@*
+@page "/Account/Manage"
+@rendermode InteractiveServer
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp1.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>Profile</PageTitle>
+
+<h3>Profile</h3>
+<StatusMessage Message="@_statusMessage" />
+
+@if (_isLoaded)
+{
+    <div class="row">
+        <div class="col-md-6">
+            <form action="/Account/Manage/PerformUpdateProfile" method="post">
+                <div class="form-floating mb-3">
+                    <input type="text" value="@_username" class="form-control" placeholder="Please choose your username." disabled />
+                    <label for="username" class="form-label">Username</label>
+                </div>
+                <div class="form-floating mb-3">
+                    <input name="PhoneNumber" value="@_phoneNumber" class="form-control" placeholder="Please enter your phone number." />
+                    <label for="phone-number" class="form-label">Phone number</label>
+                </div>
+                <button type="submit" class="w-100 btn btn-lg btn-primary">Save</button>
+            </form>
+        </div>
+    </div>
+}
+
+@code {
+    private ApplicationUser _user = default!;
+    private string? _username;
+    private string? _phoneNumber;
+    private string? _statusMessage;
+    private bool _isLoaded;
+
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? Status { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(Status))
+        {
+            _statusMessage = Status;
+        }
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userId = UserManager.GetUserId(authState.User);
+
+        if (userId == null)
+        {
+            NavigationManager.NavigateTo("Account/Login");
+            return;
+        }
+
+        var user = await UserManager.FindByIdAsync(userId);
+        if (user == null)
+        {
+            NavigationManager.NavigateTo("Account/Login");
+            return;
+        }
+
+        _user = user;
+        _username = await UserManager.GetUserNameAsync(_user);
+        _phoneNumber = await UserManager.GetPhoneNumberAsync(_user);
+
+        _isLoaded = true;
+    }
+}
+*@

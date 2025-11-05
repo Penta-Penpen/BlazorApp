@@ -1,0 +1,92 @@
+﻿@page "/Account/Register"
+@rendermode InteractiveServer
+
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IUserStore<ApplicationUser> UserStore
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IEmailSender<ApplicationUser> EmailSender
+@inject ILogger<Register> Logger
+@inject NavigationManager NavigationManager
+
+<PageTitle>Register</PageTitle>
+
+<h1>Register</h1>
+
+<div class="row">
+    <div class="col-md-4">
+        <StatusMessage Message="@Message" />
+        <form action="/Account/PerformRegister" method="post">
+            <h2>Create a new account.</h2>
+            <hr />
+            <div class="form-floating mb-3">
+                <input name="Email" type="email" class="form-control" autocomplete="username" aria-required="true" placeholder="name@example.com" required />
+                <label for="email">Email</label>
+            </div>
+            <div class="form-floating mb-3">
+                <input name="Password" type="password" class="form-control" autocomplete="new-password" aria-required="true" placeholder="password" minlength="6" required />
+                <label for="password">Password</label>
+            </div>
+            <div class="form-floating mb-3">
+                <input name="ConfirmPassword" type="password" class="form-control" autocomplete="new-password" aria-required="true" placeholder="password" minlength="6" required />
+                <label for="confirm-password">Confirm Password</label>
+            </div>
+            <br />
+            <div class="form-floating mb-3">
+                <input name="DisplayName" class="form-control" autocomplete="displayname"placeholder="Your name" />
+                <label for="displayname">Display name</label>
+            </div>
+            <div class="checkbox mb-3">
+                <label class="form-label @needAdminColor" disabled="@disableNeedAdmin">
+                    <input type="checkbox" name="NeedAdmin" class="darker-border-checkbox form-check-input" disabled="@disableNeedAdmin" />
+                    Need admin
+                </label>
+            </div>
+            @*
+            <div>
+                <InputCheckbox Value="Input.NeedAdmin" ValueChanged="(value) => NeedAdmin_Changed(value)" ValueExpression="@(() => Input.NeedAdmin)" disabled="@disableNeedAdmin" />
+                <label for="need-admin" class="@needAdminColor" disabled="@disableNeedAdmin">Register as Administrator</label>
+            </div>
+            *@
+            <br />
+            <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Register</button>
+        </form>
+    </div>
+    <div class="col-md-6 col-md-offset-2">
+        <section>
+            <h3>Use another service to register.</h3>
+            <hr />
+            <ExternalLoginPicker />
+        </section>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? ErrorMessage { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    private string? Message => ErrorMessage;
+
+    private Boolean enableAdmin { get; set; }
+    private String? disableNeedAdmin { get; set; }
+    private String needAdminColor { get; set; } = "text-body";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 管理者が組み込みアカウントだけの時は、管理者設定を可能にする.
+        List<ApplicationUser> adminUsers = (await UserManager.GetUsersInRoleAsync("Administrator")).ToList();
+        enableAdmin = (2 > adminUsers.Count);
+        disableNeedAdmin = (enableAdmin) ? null : "disabled";
+        needAdminColor = (enableAdmin) ? "text-body" : "text-muted text-decoration-line-through";
+    }
+}

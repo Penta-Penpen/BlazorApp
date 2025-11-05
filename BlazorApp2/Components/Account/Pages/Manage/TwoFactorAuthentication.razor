@@ -1,0 +1,122 @@
+﻿@page "/Account/Manage/TwoFactorAuthentication"
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Http.Features
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+@using static System.Net.WebRequestMethods
+
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>Two-factor authentication (2FA)</PageTitle>
+
+<StatusMessage Message="@_statusMessage" />
+<h3>Two-factor authentication (2FA)</h3>
+
+@if (_isLoaded)
+{
+    @if (_is2faEnabled)
+    {
+        if (_recoveryCodesLeft == 0)
+        {
+            <div class="alert alert-danger">
+                <strong>You have no recovery codes left.</strong>
+                <p>You must <a href="Account/Manage/GenerateRecoveryCodes">generate a new set of recovery codes</a> before you can log in with a recovery code.</p>
+            </div>
+        }
+        else if (_recoveryCodesLeft == 1)
+        {
+            <div class="alert alert-danger">
+                <strong>You have 1 recovery code left.</strong>
+                <p>You can <a href="Account/Manage/GenerateRecoveryCodes">generate a new set of recovery codes</a>.</p>
+            </div>
+        }
+        else if (_recoveryCodesLeft <= 3)
+        {
+            <div class="alert alert-warning">
+                <strong>You have @_recoveryCodesLeft recovery codes left.</strong>
+                <p>You should <a href="Account/Manage/GenerateRecoveryCodes">generate a new set of recovery codes</a>.</p>
+            </div>
+        }
+
+        @if (_isMachineRemembered)
+        {
+            <form action="/Account/Manage/PerformForgetBrowser" method="post" style="display: inline-block">
+                <button type="submit" class="btn btn-primary">Forget this browser</button>
+            </form>
+        }
+
+        <a href="Account/Manage/Disable2fa" class="btn btn-primary">Disable 2FA</a>
+        <a href="Account/Manage/GenerateRecoveryCodes" class="btn btn-primary">Reset recovery codes</a>
+    }
+
+    <h4>Authenticator app</h4>
+    @if (!_hasAuthenticator)
+    {
+        <a href="Account/Manage/EnableAuthenticator" class="btn btn-primary">Add authenticator app</a>
+    }
+    else
+    {
+        <a href="Account/Manage/EnableAuthenticator" class="btn btn-primary">Set up authenticator app</a>
+        <a href="Account/Manage/ResetAuthenticator" class="btn btn-primary">Reset authenticator app</a>
+    }
+}
+
+@code {
+    private ApplicationUser _user = default!;
+    private bool _hasAuthenticator;
+    private int _recoveryCodesLeft;
+    private bool _is2faEnabled;
+    private bool _isMachineRemembered;
+    private string? _statusMessage;
+    private bool _isLoaded;
+
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? Status { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(Status))
+        {
+            _statusMessage = Status;
+        }
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userId = UserManager.GetUserId(authState.User);
+
+        if (userId == null)
+        {
+            NavigationManager.NavigateTo("Account/Login");
+            return;
+        }
+
+        var user = await UserManager.FindByIdAsync(userId);
+        if (user == null)
+        {
+            NavigationManager.NavigateTo("Account/Login");
+            return;
+        }
+
+        _user = user;
+        _hasAuthenticator = await UserManager.GetAuthenticatorKeyAsync(_user) is not null;
+        _is2faEnabled = await UserManager.GetTwoFactorEnabledAsync(_user);
+        _recoveryCodesLeft = await UserManager.CountRecoveryCodesAsync(_user);
+
+        // IsTwoFactorClientRememberedAsync は Cookie を操作するため、エンドポイント経由で取得
+        // ここでは常に false とし、実際の状態はエンドポイントから取得
+        _isMachineRemembered = false;
+        //try
+        //{
+        //    _isMachineRemembered = await Http.GetFromJsonAsync<bool>("api/account/2fa-remembered");
+        //}
+        //catch
+        //{
+        //    _isMachineRemembered = false;
+        //}
+
+        _isLoaded = true;
+    }
+}

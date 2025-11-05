@@ -1,0 +1,173 @@
+﻿@page "/Account/Manage/ExternalLogins"
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
+@inject IUserStore<ApplicationUser> UserStore
+
+<PageTitle>Manage your external logins</PageTitle>
+
+<StatusMessage Message="@_statusMessage" />
+
+@if (_isLoaded)
+{
+    @if (currentLogins?.Count > 0)
+    {
+        <h3>Registered Logins</h3>
+        <table class="table">
+            <tbody>
+                @foreach (var login in currentLogins)
+                {
+                    <tr>
+                        <td>@login.ProviderDisplayName</td>
+                        <td>
+                            @if (showRemoveButton)
+                            {
+                                <form @formname="@($"remove-login-{login.LoginProvider}")" @onsubmit="() => OnSubmitAsync(login.LoginProvider, login.ProviderKey)" method="post">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn-primary" title="Remove this @login.ProviderDisplayName login from your account">Remove</button>
+                                </form>
+                            }
+                            else
+                            {
+                                @: &nbsp;
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    @if (otherLogins?.Count > 0)
+    {
+        <h4>Add another service to log in.</h4>
+        <hr />
+        <form class="form-horizontal" action="Account/Manage/LinkExternalLogin" method="post">
+            <AntiforgeryToken />
+            <div>
+                <p>
+                    @foreach (var provider in otherLogins)
+                    {
+                        <button type="submit" class="btn btn-primary" name="Provider" value="@provider.Name" title="Log in using your @provider.DisplayName account">
+                            @provider.DisplayName
+                        </button>
+                    }
+                </p>
+            </div>
+        </form>
+    }
+}
+
+@code {
+    public const string LinkLoginCallbackAction = "LinkLoginCallback";
+
+    private ApplicationUser user = default!;
+
+    private IList<UserLoginInfo>? currentLogins;
+    private IList<AuthenticationScheme>? otherLogins;
+    private bool showRemoveButton;
+    private string? _statusMessage;
+    private bool _isLoaded;
+
+    [SupplyParameterFromQuery]
+    private string? Action { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userId = UserManager.GetUserId(authState.User);
+
+        if (userId == null)
+        {
+            NavigationManager.NavigateTo("Account/Login");
+            return;
+        }
+
+        var loadedUser = await UserManager.FindByIdAsync(userId);
+        if (loadedUser == null)
+        {
+            NavigationManager.NavigateTo("Account/Login");
+            return;
+        }
+
+        user = loadedUser;
+        currentLogins = await UserManager.GetLoginsAsync(user);
+        otherLogins = (await SignInManager.GetExternalAuthenticationSchemesAsync())
+            .Where(auth => currentLogins.All(ul => auth.Name != ul.LoginProvider))
+            .ToList();
+
+        string? passwordHash = null;
+        if (UserStore is IUserPasswordStore<ApplicationUser> userPasswordStore)
+        {
+            passwordHash = await userPasswordStore.GetPasswordHashAsync(user, CancellationToken.None);
+        }
+
+        showRemoveButton = passwordHash is not null || currentLogins.Count > 1;
+
+        if (Action == LinkLoginCallbackAction)
+        {
+            await OnGetLinkLoginCallbackAsync();
+        }
+
+        _isLoaded = true;
+    }
+
+    private async Task OnSubmitAsync(string loginProvider, string providerKey)
+    {
+        var result = await UserManager.RemoveLoginAsync(user, loginProvider, providerKey);
+        if (!result.Succeeded)
+        {
+            _statusMessage = "Error: The external login was not removed.";
+            return;
+        }
+
+        await SignInManager.RefreshSignInAsync(user);
+        _statusMessage = "The external login was removed.";
+
+        // Reload the logins
+        currentLogins = await UserManager.GetLoginsAsync(user);
+        otherLogins = (await SignInManager.GetExternalAuthenticationSchemesAsync())
+            .Where(auth => currentLogins.All(ul => auth.Name != ul.LoginProvider))
+            .ToList();
+
+        string? passwordHash = null;
+        if (UserStore is IUserPasswordStore<ApplicationUser> userPasswordStore)
+        {
+            passwordHash = await userPasswordStore.GetPasswordHashAsync(user, CancellationToken.None);
+        }
+        showRemoveButton = passwordHash is not null || currentLogins.Count > 1;
+    }
+
+    private async Task OnGetLinkLoginCallbackAsync()
+    {
+        var userId = await UserManager.GetUserIdAsync(user);
+        var info = await SignInManager.GetExternalLoginInfoAsync(userId);
+        if (info is null)
+        {
+            _statusMessage = "Error: Could not load external login info.";
+            return;
+        }
+
+        var result = await UserManager.AddLoginAsync(user, info);
+        if (!result.Succeeded)
+        {
+            _statusMessage = "Error: The external login was not added. External logins can only be associated with one account.";
+            return;
+        }
+
+        _statusMessage = "The external login was added.";
+
+        // Reload the logins
+        currentLogins = await UserManager.GetLoginsAsync(user);
+        otherLogins = (await SignInManager.GetExternalAuthenticationSchemesAsync())
+            .Where(auth => currentLogins.All(ul => auth.Name != ul.LoginProvider))
+            .ToList();
+    }
+
+}

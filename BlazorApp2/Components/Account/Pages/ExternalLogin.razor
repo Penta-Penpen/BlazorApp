@@ -1,0 +1,121 @@
+﻿@page "/Account/ExternalLogin"
+@rendermode InteractiveServer
+
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using BlazorApp2.Data
+
+@inject SignInManager<ApplicationUser> SignInManager
+@inject UserManager<ApplicationUser> UserManager
+@inject IUserStore<ApplicationUser> UserStore
+@inject IEmailSender<ApplicationUser> EmailSender
+@inject NavigationManager NavigationManager
+@inject ILogger<ExternalLogin> Logger
+
+<PageTitle>Register</PageTitle>
+
+<StatusMessage Message="@message" />
+<h1>Register</h1>
+<h2>Associate your @ProviderDisplayName account.</h2>
+<hr />
+
+@if (_isLoaded)
+{
+    <div class="alert alert-info">
+        You've successfully authenticated with <strong>@ProviderDisplayName</strong>.
+        Please enter an email address for this site below and click the Register button to finish
+        logging in.
+    </div>
+
+    <div class="row">
+        <div class="col-md-4">
+            <form action="/Account/PerformExternalLoginRegister" method="post">
+                <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+                @if (!string.IsNullOrEmpty(message))
+                {
+                    <div class="text-danger" role="alert">@message</div>
+                }
+                <div class="form-floating mb-3">
+                    <input name="Email" class="form-control" autocomplete="email" placeholder="Please enter your email." value="@Input.Email" />
+                    <label for="email" class="form-label">Email</label>
+                </div>
+                <button type="submit" class="w-100 btn btn-lg btn-primary">Register</button>
+            </form>
+        </div>
+    </div>
+}
+
+@code {
+    public const string LoginCallbackAction = "LoginCallback";
+
+    private string? message;
+    private ExternalLoginInfo? externalLoginInfo;
+    private bool _isLoaded;
+
+    [SupplyParameterFromQuery]
+    private string? RemoteError { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? Action { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? Error { get; set; }
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    private string? ProviderDisplayName => externalLoginInfo?.ProviderDisplayName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(Error))
+        {
+            message = $"Error: {Error}";
+            return;
+        }
+
+        if (RemoteError is not null)
+        {
+            message = $"Error from external provider: {RemoteError}";
+            return;
+        }
+
+        var info = await SignInManager.GetExternalLoginInfoAsync();
+        if (info is null)
+        {
+            message = "Error loading external login information.";
+            return;
+        }
+
+        externalLoginInfo = info;
+
+        if (Action == LoginCallbackAction)
+        {
+            // Callback処理はサーバーエンドポイント経由で実行
+            NavigationManager.NavigateTo($"/Account/PerformExternalLoginCallback?returnUrl={Uri.EscapeDataString(ReturnUrl ?? "")}", forceLoad: true);
+            return;
+        }
+
+        // If the user does not have an account, then ask the user to create an account.
+        if (externalLoginInfo.Principal.HasClaim(c => c.Type == ClaimTypes.Email))
+        {
+            Input.Email = externalLoginInfo.Principal.FindFirstValue(ClaimTypes.Email) ?? "";
+        }
+
+        _isLoaded = true;
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+    }
+}

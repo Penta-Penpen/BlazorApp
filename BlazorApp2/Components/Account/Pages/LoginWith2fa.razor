@@ -1,0 +1,68 @@
+﻿@page "/Account/LoginWith2fa"
+@rendermode InteractiveServer
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject SignInManager<ApplicationUser> SignInManager
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager NavigationManager
+@inject ILogger<LoginWith2fa> Logger
+
+<PageTitle>Two-factor authentication</PageTitle>
+
+<h1>Two-factor authentication</h1>
+<hr />
+<StatusMessage Message="@message" />
+<p>Your login is protected with an authenticator app. Enter your authenticator code below.</p>
+<div class="row">
+    <div class="col-md-4">
+        <form action="/Account/PerformLoginWith2fa" method="post">
+            <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+            <input type="hidden" name="RememberMe" value="@RememberMe" />
+            @if (!string.IsNullOrEmpty(message))
+            {
+                <div class="text-danger" role="alert">@message</div>
+            }
+            <div class="form-floating mb-3">
+                <input name="TwoFactorCode" class="form-control" autocomplete="off" placeholder="Please enter the code." />
+                <label for="two-factor-code" class="form-label">Authenticator code</label>
+            </div>
+            <div class="checkbox mb-3">
+                <label for="remember-machine" class="form-label">
+                    <input type="checkbox" name="RememberMachine" class="form-check-input" />
+                    Remember this machine
+                </label>
+            </div>
+            <div>
+                <button type="submit" class="w-100 btn btn-lg btn-primary">Log in</button>
+            </div>
+        </form>
+    </div>
+</div>
+<p>
+    Don't have access to your authenticator device? You can
+    <a href="Account/LoginWithRecoveryCode?ReturnUrl=@ReturnUrl">log in with a recovery code</a>.
+</p>
+
+@code {
+    private string? message;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery]
+    private bool RememberMe { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? Error { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (!string.IsNullOrEmpty(Error))
+        {
+            message = $"Error: {Error}";
+        }
+    }
+}

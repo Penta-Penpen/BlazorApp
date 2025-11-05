@@ -1,0 +1,76 @@
+﻿@page "/Account/Manage/Disable2fa"
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
+@inject ILogger<Disable2fa> Logger
+
+<PageTitle>Disable two-factor authentication (2FA)</PageTitle>
+
+<StatusMessage Message="@_statusMessage" />
+<h3>Disable two-factor authentication (2FA)</h3>
+
+<div class="alert alert-warning" role="alert">
+    <p>
+        <strong>This action only disables 2FA.</strong>
+    </p>
+    <p>
+        Disabling 2FA does not change the keys used in authenticator apps. If you wish to change the key
+        used in an authenticator app you should <a href="Account/Manage/ResetAuthenticator">reset your authenticator keys.</a>
+    </p>
+</div>
+
+@if (_isLoaded)
+{
+    <div>
+        <form action="/Account/Manage/PerformDisable2fa" method="post">
+            <button class="btn btn-danger" type="submit">Disable 2FA</button>
+        </form>
+    </div>
+}
+
+@code {
+    private ApplicationUser _user = default!;
+    private string? _statusMessage;
+    private bool _isLoaded;
+
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? Status { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(Status))
+        {
+            _statusMessage = Status;
+        }
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userId = UserManager.GetUserId(authState.User);
+
+        if (userId == null)
+        {
+            NavigationManager.NavigateTo("Account/Login");
+            return;
+        }
+
+        var user = await UserManager.FindByIdAsync(userId);
+        if (user == null)
+        {
+            NavigationManager.NavigateTo("Account/Login");
+            return;
+        }
+
+        _user = user;
+
+        if (!await UserManager.GetTwoFactorEnabledAsync(_user))
+        {
+            throw new InvalidOperationException("Cannot disable 2FA for user as it's not currently enabled.");
+        }
+
+        _isLoaded = true;
+    }
+}
